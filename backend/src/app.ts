@@ -2,6 +2,9 @@ import express, { Express, Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
+import { testConnection } from './config/database'
+import authRoutes from './routes/auth'
+import videoRoutes from './routes/video'
 
 // 環境変数を読み込む
 dotenv.config()
@@ -12,9 +15,6 @@ const PORT = process.env.PORT || 5000
 
 /**
  * ミドルウェア設定
- * 
- * ミドルウェア = すべてのリクエストを処理する前に共通処理を行う
- * 例：セキュリティチェック、リクエスト形式の確認、など
  */
 
 // セキュリティヘッダーを追加
@@ -36,7 +36,6 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
 /**
  * ロギングミドルウェア
- * すべてのリクエストをコ���ソールに表示
  */
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
@@ -44,10 +43,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 })
 
 /**
- * テスト用のヘルスチェックエンドポイント
- * 
- * サーバーが起動しているか確認するために使う
- * curl http://localhost:5000/health でテスト可能
+ * ヘルスチェック
  */
 app.get('/health', (req: Request, res: Response) => {
   res.json({
@@ -58,24 +54,28 @@ app.get('/health', (req: Request, res: Response) => {
 })
 
 /**
- * APIのベースパス
+ * APIルート登録
  * 
- * すべてのAPIエンドポイントは /api/ で始まる
- * 例：/api/auth/login, /api/videos, など
+ * すべてのルートを /api パスに登録
  */
-app.use('/api', (req: Request, res: Response) => {
+app.use('/api/auth', authRoutes)
+app.use('/api/videos', videoRoutes)
+
+/**
+ * 404 ハンドラー
+ */
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     error: {
       code: 'NOT_FOUND',
-      message: 'このエンドポイントはまだ実装されていません',
+      message: 'このエンドポイントは見つかりません',
+      path: req.path,
     },
   })
 })
 
 /**
  * グローバルエラーハンドラー
- * 
- * すべてのエラーを捕捉して、ユーザーに適切なメッセージを返す
  */
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Error:', err)
@@ -91,15 +91,46 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 /**
  * サーバーを起動
  */
-app.listen(PORT, () => {
-  console.log(`
-╔════════════════════════════════════╗
-║     xsscroll Backend Started       ║
-╠════════════════════════════════════╣
-║ 🚀 Server: http://localhost:${PORT}     ║
-║ 🔍 Health: http://localhost:${PORT}/health ║
-╚════════════════════════════════════╝
-  `)
-})
+const startServer = async () => {
+  try {
+    // データベース接続テスト
+    const isConnected = await testConnection()
+    if (!isConnected) {
+      console.error('❌ Failed to connect to database. Exiting...')
+      process.exit(1)
+    }
+
+    // サーバーを起動
+    app.listen(PORT, () => {
+      console.log(`
+╔═══════════════════════════════════════════╗
+║       🚀 xsscroll Backend Started 🚀      ║
+╠═══════════════════════════════════════════╣
+║                                           ║
+║  📍 Server: http://localhost:${PORT}        ║
+║  🔍 Health: http://localhost:${PORT}/health  ║
+║                                           ║
+║  📚 API Documentation:                    ║
+║  • POST   /api/auth/register              ║
+║  • POST   /api/auth/login                 ║
+║  • GET    /api/auth/me                    ║
+║  • POST   /api/videos                     ║
+║  • GET    /api/videos                     ║
+║  • GET    /api/videos/:id                 ║
+║  • PUT    /api/videos/:id                 ║
+║  • DELETE /api/videos/:id                 ║
+║  • POST   /api/videos/:id/likes           ║
+║  • GET    /api/users/:userId/videos       ║
+║                                           ║
+╚═══════════════════════════════════════════╝
+      `)
+    })
+  } catch (error) {
+    console.error('❌ Failed to start server:', error)
+    process.exit(1)
+  }
+}
+
+startServer()
 
 export default app
